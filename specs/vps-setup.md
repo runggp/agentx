@@ -74,17 +74,16 @@ cp secrets.env.example secrets.env
 nano secrets.env
 chmod 600 secrets.env
 
-# Append git identity for the ralph container (stays on VPS only, not in git)
+# Append git identity for the ralph container (stays on VPS only, not in git).
+# GIT_AUTHOR/COMMITTER env vars are used instead of GIT_CONFIG_COUNT which
+# does not reliably propagate through docker env_file loading.
 cat >> secrets.env <<'EOF'
 
-# Git identity for ralph container
-GIT_CONFIG_COUNT=3
-GIT_CONFIG_KEY_0=safe.directory
-GIT_CONFIG_VALUE_0=*
-GIT_CONFIG_KEY_1=user.name
-GIT_CONFIG_VALUE_1=<git-username>
-GIT_CONFIG_KEY_2=user.email
-GIT_CONFIG_VALUE_2=<git-email>
+# Git identity for commits made inside the container
+GIT_AUTHOR_NAME=<git-username>
+GIT_AUTHOR_EMAIL=<git-email>
+GIT_COMMITTER_NAME=<git-username>
+GIT_COMMITTER_EMAIL=<git-email>
 EOF
 
 # Agent SSH directory — ralph runs as uid 1001 (non-root); needs its own copy of
