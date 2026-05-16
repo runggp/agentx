@@ -20,6 +20,7 @@ services:
       GIT_CONFIG_VALUE_0: "*"
     volumes:
       - ${WORKSPACE_PATH:-/opt/agentx}:/home/ralph/workspace
+      - ${SCAFFOLD}/lib:/home/ralph/workspace/lib:ro
       - /root/.claude:/home/ralph/.claude:ro
       - /root/.ssh:/home/ralph/.ssh:ro
     network_mode: host
