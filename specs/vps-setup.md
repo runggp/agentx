@@ -79,8 +79,9 @@ cd /opt/agentx
 nano secrets.env
 chmod 600 secrets.env
 
-# Claude auth (one-time, interactive)
-curl -fsSL https://claude.ai/install.sh | sh
+# Claude CLI
+apt install -y nodejs npm
+npm install -g @anthropic-ai/claude-code
 claude login
 
 # Smoke test
