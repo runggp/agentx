@@ -13,6 +13,9 @@ services:
       RALPH_MODEL: ${RALPH_MODEL:-claude-sonnet-4-6}
       RALPH_OUTPUT_FORMAT: ${RALPH_OUTPUT_FORMAT:-pretty}
       OLLAMA_HOST: http://localhost:11434
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: "*"
     volumes:
       - ${WORKSPACE_PATH:-/opt/agentx}:/home/ralph/workspace
       - /root/.claude:/home/ralph/.claude:ro
