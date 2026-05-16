@@ -40,6 +40,11 @@ ssh root@<vps-ip> "chmod 600 ~/.ssh/hostinger"
 
 > **One-time manual step:** Ensure `~/.ssh/hostinger.pub` is added to github.com/runggp → Settings → SSH Keys with **write access**.
 
+> **Passphrase:** The `~/.ssh/hostinger` key on your Mac has a passphrase (use `ssh-add ~/.ssh/hostinger` to cache it locally). The copy on the VPS must be **passphraseless** — the agent runs unattended and cannot prompt for input. If the copied key still has a passphrase, strip it on the VPS:
+> ```bash
+> ssh-keygen -p -f ~/.ssh/hostinger  # enter current passphrase, leave new passphrase blank
+> ```
+
 ---
 
 ### Step 2 — On the VPS
