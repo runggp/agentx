@@ -20,7 +20,7 @@ services:
     volumes:
       - ${WORKSPACE_PATH:-/opt/agentx}:/home/ralph/workspace
       - ${SCAFFOLD}/lib:/home/ralph/workspace/lib:ro
-      - /root/.claude:/home/ralph/.claude:ro
+      - /opt/agentx/.agent-claude:/home/ralph/.claude
       - /opt/agentx/.agent-ssh:/home/ralph/.ssh:ro  # must be chowned to uid 1001 (ralph)
     network_mode: host
     restart: "no"
