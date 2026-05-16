@@ -5,6 +5,7 @@ services:
     build:
       context: ${SCAFFOLD:?Set SCAFFOLD=/opt/agentx/scaffold}
       dockerfile: Dockerfile
+    user: root
     env_file: /opt/agentx/secrets.env
     environment:
       WORKSPACE_PATH: /home/ralph/workspace
@@ -13,7 +14,7 @@ services:
       RALPH_MODEL: ${RALPH_MODEL:-claude-sonnet-4-6}
       RALPH_OUTPUT_FORMAT: ${RALPH_OUTPUT_FORMAT:-pretty}
       OLLAMA_HOST: http://localhost:11434
-      GIT_SSH_COMMAND: ssh -i /home/ralph/.ssh/hostinger -o StrictHostKeyChecking=accept-new
+      GIT_SSH_COMMAND: ssh -i /home/ralph/.ssh/hostinger -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: safe.directory
       GIT_CONFIG_VALUE_0: "*"
