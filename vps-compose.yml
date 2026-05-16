@@ -7,14 +7,14 @@ services:
       dockerfile: Dockerfile
     env_file: /opt/agentx/secrets.env
     environment:
-      WORKSPACE_PATH: /workspace
+      WORKSPACE_PATH: /home/ralph/workspace
       RALPH_MAX_ITERATIONS: ${RALPH_MAX_ITERATIONS:-5}
       RALPH_MODE: ${RALPH_MODE:-build}
       RALPH_MODEL: ${RALPH_MODEL:-claude-sonnet-4-6}
       RALPH_OUTPUT_FORMAT: ${RALPH_OUTPUT_FORMAT:-pretty}
       OLLAMA_HOST: http://localhost:11434
     volumes:
-      - ${WORKSPACE_PATH:-/opt/agentx}:/workspace
+      - ${WORKSPACE_PATH:-/opt/agentx}:/home/ralph/workspace
       - /root/.claude:/home/ralph/.claude:ro
       - /root/.ssh:/home/ralph/.ssh:ro
     network_mode: host
