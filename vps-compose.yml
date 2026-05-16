@@ -5,7 +5,6 @@ services:
     build:
       context: ${SCAFFOLD:?Set SCAFFOLD=/opt/agentx/scaffold}
       dockerfile: Dockerfile
-    user: root
     env_file: /opt/agentx/secrets.env
     environment:
       WORKSPACE_PATH: /home/ralph/workspace
@@ -22,7 +21,7 @@ services:
       - ${WORKSPACE_PATH:-/opt/agentx}:/home/ralph/workspace
       - ${SCAFFOLD}/lib:/home/ralph/workspace/lib:ro
       - /root/.claude:/home/ralph/.claude:ro
-      - /root/.ssh:/home/ralph/.ssh:ro
+      - /opt/agentx/.agent-ssh:/home/ralph/.ssh:ro
     network_mode: host
     restart: "no"
     logging:

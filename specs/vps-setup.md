@@ -91,12 +91,29 @@ GIT_CONFIG_KEY_2=user.email
 GIT_CONFIG_VALUE_2=<git-email>
 EOF
 
+# Agent SSH directory — ralph container runs as non-root; needs its own copy of
+# the deploy key with matching ownership (uid 1000 = default useradd uid in container)
+mkdir -p /opt/agentx/.agent-ssh
+cp /root/.ssh/hostinger /opt/agentx/.agent-ssh/
+chmod 700 /opt/agentx/.agent-ssh
+chmod 600 /opt/agentx/.agent-ssh/hostinger
+chown -R 1000:1000 /opt/agentx/.agent-ssh
+cat > /opt/agentx/.agent-ssh/config <<'EOF'
+Host github.com
+  IdentityFile /home/ralph/.ssh/hostinger
+  StrictHostKeyChecking no
+  UserKnownHostsFile /dev/null
+EOF
+chmod 600 /opt/agentx/.agent-ssh/config
+chown 1000:1000 /opt/agentx/.agent-ssh/config
+
 # Claude CLI
 apt install -y nodejs npm
 npm install -g @anthropic-ai/claude-code
 claude login
 
-# Smoke test
+# Smoke test (always run from main to avoid stale branch errors)
+git checkout main
 SCAFFOLD=/opt/agentx/scaffold ./ralph.sh plan 1
 ```
 
