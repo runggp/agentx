@@ -72,6 +72,12 @@ chmod 600 ~/.ssh/config
 # Repos — clone before cd so the target directory is empty
 git clone git@github.com:runggp/agentx.git /opt/agentx
 git clone git@github.com:runggp/scaffold.git /opt/agentx/scaffold
+
+# Give ralph (uid 1001) ownership of the workspace so it can write to .git
+chown -R 1001:1001 /opt/agentx
+# Allow root to still run git on this repo despite ownership mismatch
+git config --global --add safe.directory /opt/agentx
+
 cd /opt/agentx
 
 # Secrets — copy from example, then fill in values
@@ -91,8 +97,8 @@ GIT_CONFIG_KEY_2=user.email
 GIT_CONFIG_VALUE_2=<git-email>
 EOF
 
-# Agent SSH directory — ralph container runs as non-root; needs its own copy of
-# the deploy key with matching ownership (uid 1000 = default useradd uid in container)
+# Agent SSH directory — ralph container runs as non-root (uid 1001); needs its own
+# copy of the deploy key with matching ownership so SSH can read the private key
 mkdir -p /opt/agentx/.agent-ssh
 cp /root/.ssh/hostinger /opt/agentx/.agent-ssh/
 chmod 700 /opt/agentx/.agent-ssh
