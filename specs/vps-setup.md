@@ -97,7 +97,7 @@ mkdir -p /opt/agentx/.agent-ssh
 cp /root/.ssh/hostinger /opt/agentx/.agent-ssh/
 chmod 700 /opt/agentx/.agent-ssh
 chmod 600 /opt/agentx/.agent-ssh/hostinger
-chown -R 1000:1000 /opt/agentx/.agent-ssh
+chown -R 1001:1001 /opt/agentx/.agent-ssh
 cat > /opt/agentx/.agent-ssh/config <<'EOF'
 Host github.com
   IdentityFile /home/ralph/.ssh/hostinger
