@@ -13,7 +13,7 @@ services:
       RALPH_MODEL: ${RALPH_MODEL:-claude-sonnet-4-6}
       OLLAMA_HOST: http://localhost:11434
     volumes:
-      - /opt/agentx/workspace:/workspace
+      - ${WORKSPACE_PATH:-/opt/agentx}:/workspace
       - /root/.claude:/home/ralph/.claude:ro
       - /root/.ssh:/home/ralph/.ssh:ro
     network_mode: host

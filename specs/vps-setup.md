@@ -69,10 +69,9 @@ Host github.com
 EOF
 chmod 600 ~/.ssh/config
 
-# Repos — clone before creating subdirs so the target directory is empty
+# Repos — clone before cd so the target directory is empty
 git clone git@github.com:runggp/agentx.git /opt/agentx
 git clone git@github.com:runggp/scaffold.git /opt/agentx/scaffold
-mkdir -p /opt/agentx/workspace
 cd /opt/agentx
 
 # Secrets (see secrets.env.example for required keys)
