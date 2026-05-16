@@ -74,9 +74,22 @@ git clone git@github.com:runggp/agentx.git /opt/agentx
 git clone git@github.com:runggp/scaffold.git /opt/agentx/scaffold
 cd /opt/agentx
 
-# Secrets (see secrets.env.example for required keys)
+# Secrets — copy from example, then fill in values
+cp secrets.env.example secrets.env
 nano secrets.env
 chmod 600 secrets.env
+# Also append git identity for the container (not in example, stays on VPS only):
+cat >> secrets.env <<'EOF'
+
+# Git identity for ralph container
+GIT_CONFIG_COUNT=3
+GIT_CONFIG_KEY_0=safe.directory
+GIT_CONFIG_VALUE_0=*
+GIT_CONFIG_KEY_1=user.name
+GIT_CONFIG_VALUE_1=<git-username>
+GIT_CONFIG_KEY_2=user.email
+GIT_CONFIG_VALUE_2=<git-email>
+EOF
 
 # Claude CLI
 apt install -y nodejs npm
