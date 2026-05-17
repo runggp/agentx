@@ -11,6 +11,11 @@ Subject prefixes:
     [task] <description>   — extract spec from body/.md attachment, run ralph
     [stop]                 — write .stop sentinel to workspace; loop exits cleanly
     [status]               — reply with current loop state and recent git commits
+
+Spend tracking env vars (optional):
+    AGENTX_SPEND_CEILING_USD     — stop loop and alert when cumulative spend reaches this (0 = disabled)
+    AGENTX_SPEND_ALERT_USD       — send email alert when cumulative spend reaches this (0 = disabled)
+    AGENTX_SPEND_ALERT_EMAIL     — email address to send spend alerts to
 """
 
 from __future__ import annotations
@@ -54,6 +59,9 @@ class Config:
     poll_interval: int = 30
     allowed_senders: frozenset[str] = frozenset()
     ralph_timeout: int = 1800
+    spend_ceiling_usd: float = 0.0
+    spend_alert_threshold_usd: float = 0.0
+    spend_alert_email: str = ""
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -85,6 +93,9 @@ class Config:
             poll_interval=int(os.environ.get("AGENTX_POLL_INTERVAL", "30")),
             allowed_senders=allowed_senders,
             ralph_timeout=int(os.environ.get("AGENTX_RALPH_TIMEOUT", "1800")),
+            spend_ceiling_usd=float(os.environ.get("AGENTX_SPEND_CEILING_USD", "0")),
+            spend_alert_threshold_usd=float(os.environ.get("AGENTX_SPEND_ALERT_USD", "0")),
+            spend_alert_email=os.environ.get("AGENTX_SPEND_ALERT_EMAIL", ""),
         )
 
 
@@ -156,19 +167,21 @@ def write_session_log(cfg: Config, record: dict) -> None:  # type: ignore[type-a
     """Write a JSON session record to logs/sessions/<id>.json and append to sessions.jsonl.
 
     Schema:
-        session_id       — UUID4 string
-        started_at       — ISO-8601 UTC timestamp
-        completed_at     — ISO-8601 UTC timestamp
-        duration_seconds — float elapsed time
-        task_description — human-readable task name from email subject
-        spec_preview     — first 500 chars of spec (full spec may be large)
-        sender           — email address that triggered the session
-        exit_code        — ralph.sh exit code (null on timeout)
-        timed_out        — true if ralph was killed due to timeout
-        output_tail      — last 100 lines of ralph stdout+stderr
+        session_id               — UUID4 string
+        started_at               — ISO-8601 UTC timestamp
+        completed_at             — ISO-8601 UTC timestamp
+        duration_seconds         — float elapsed time
+        task_description         — human-readable task name from email subject
+        spec_preview             — first 500 chars of spec (full spec may be large)
+        sender                   — email address that triggered the session
+        exit_code                — ralph.sh exit code (null on timeout)
+        timed_out                — true if ralph was killed due to timeout
+        output_tail              — last 100 lines of ralph stdout+stderr
+        cost_usd                 — estimated USD cost parsed from stream-json output
+        cumulative_cost_usd      — running total across all sessions
 
     Future agent iterations can read sessions.jsonl to understand what has been
-    attempted, how long tasks took, and what exit codes were produced.
+    attempted, how long tasks took, what exit codes were produced, and total spend.
     """
     log_dir = cfg.workspace / "logs" / "sessions"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -182,6 +195,51 @@ def write_session_log(cfg: Config, record: dict) -> None:  # type: ignore[type-a
         fh.write(json.dumps(record) + "\n")
 
     log.info("Session log written to %s", session_file)
+
+
+# ---------------------------------------------------------------------------
+# Spend tracking
+# ---------------------------------------------------------------------------
+
+def extract_cost_from_output(output: str) -> float:
+    """Parse stream-json output lines for 'result' events and sum cost_usd values.
+
+    The Claude CLI with --output-format=stream-json emits one JSON object per line.
+    The 'result' event contains cost_usd for that invocation.
+    """
+    total = 0.0
+    for line in output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+            if isinstance(data, dict) and data.get("type") == "result":
+                cost = data.get("cost_usd")
+                if cost is not None:
+                    total += float(cost)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            continue
+    return total
+
+
+def get_cumulative_cost(cfg: Config) -> float:
+    """Sum cost_usd from all session logs in sessions.jsonl."""
+    jsonl = cfg.workspace / "logs" / "sessions.jsonl"
+    if not jsonl.exists():
+        return 0.0
+    total = 0.0
+    with jsonl.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+                total += float(record.get("cost_usd", 0.0))
+            except (json.JSONDecodeError, ValueError, TypeError):
+                continue
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +303,12 @@ async def dispatch_task(cfg: Config, spec: str, description: str, sender: str = 
     completed_at = datetime.datetime.now(datetime.timezone.utc)
     duration = (completed_at - started_at).total_seconds()
 
+    cost_usd = extract_cost_from_output(output)
+    log.info("Session cost: $%.6f", cost_usd)
+
+    cumulative_cost = get_cumulative_cost(cfg) + cost_usd
+    log.info("Cumulative cost: $%.6f", cumulative_cost)
+
     record: dict = {  # type: ignore[type-arg]
         "session_id": session_id,
         "started_at": started_at.isoformat(),
@@ -256,6 +320,8 @@ async def dispatch_task(cfg: Config, spec: str, description: str, sender: str = 
         "exit_code": exit_code,
         "timed_out": timed_out,
         "output_tail": "\n".join(output.splitlines()[-100:]),
+        "cost_usd": cost_usd,
+        "cumulative_cost_usd": cumulative_cost,
     }
     write_session_log(cfg, record)
 
@@ -266,12 +332,56 @@ async def dispatch_task(cfg: Config, spec: str, description: str, sender: str = 
     status = "completed" if resolved_exit == 0 else f"exited with code {resolved_exit}"
     summary = (
         f"Ralph loop {status}.\n\n"
-        f"Task: {description}\n\n"
+        f"Task: {description}\n"
+        f"Cost: ${cost_usd:.6f} (cumulative: ${cumulative_cost:.6f})\n\n"
         f"--- Loop output (last 100 lines) ---\n"
         + "\n".join(output.splitlines()[-100:])
     )
+
+    await _check_spend(cfg, cumulative_cost)
+
     log.info("Ralph finished (exit=%d)", resolved_exit)
     return summary
+
+
+async def _check_spend(cfg: Config, cumulative_cost: float) -> None:
+    """Check spend ceiling and alert thresholds; write stop sentinel if ceiling exceeded."""
+    if cfg.spend_ceiling_usd > 0 and cumulative_cost >= cfg.spend_ceiling_usd:
+        log.warning(
+            "Spend ceiling $%.4f reached (cumulative $%.4f) — writing stop sentinel",
+            cfg.spend_ceiling_usd,
+            cumulative_cost,
+        )
+        write_stop_sentinel(cfg)
+        if cfg.spend_alert_email:
+            await send_reply(
+                cfg,
+                cfg.spend_alert_email,
+                "agentx spend ceiling reached",
+                (
+                    f"Cumulative spend ${cumulative_cost:.4f} has reached the configured "
+                    f"ceiling of ${cfg.spend_ceiling_usd:.4f}.\n\n"
+                    f"Stop sentinel written — the loop will exit after its current iteration."
+                ),
+            )
+    elif cfg.spend_alert_threshold_usd > 0 and cumulative_cost >= cfg.spend_alert_threshold_usd:
+        log.warning(
+            "Spend alert threshold $%.4f reached (cumulative $%.4f)",
+            cfg.spend_alert_threshold_usd,
+            cumulative_cost,
+        )
+        if cfg.spend_alert_email:
+            await send_reply(
+                cfg,
+                cfg.spend_alert_email,
+                "agentx spend alert",
+                (
+                    f"Cumulative spend ${cumulative_cost:.4f} has reached the configured "
+                    f"alert threshold of ${cfg.spend_alert_threshold_usd:.4f}.\n\n"
+                    f"No action taken — the loop continues. "
+                    f"Configure AGENTX_SPEND_CEILING_USD to stop automatically."
+                ),
+            )
 
 
 def get_status(cfg: Config) -> str:
@@ -283,6 +393,9 @@ def get_status(cfg: Config) -> str:
         lines.append("Stop sentinel is present — loop will exit after current iteration.\n")
     else:
         lines.append("No stop sentinel.\n")
+
+    cumulative = get_cumulative_cost(cfg)
+    lines.append(f"Cumulative spend: ${cumulative:.6f}\n")
 
     try:
         result = subprocess.run(
@@ -314,7 +427,7 @@ async def send_reply(cfg: Config, to_addr: str, subject: str, body: str) -> None
     msg = EmailMessage()
     msg["From"] = cfg.smtp_user
     msg["To"] = to_addr
-    msg["Subject"] = f"Re: {subject}"
+    msg["Subject"] = f"Re: {subject}" if not subject.startswith("Re:") else subject
     msg.set_content(body)
 
     try:
@@ -453,6 +566,10 @@ def main() -> None:
         sys.exit(1)
 
     log.info("agentx listener starting (workspace=%s)", cfg.workspace)
+    if cfg.spend_ceiling_usd > 0:
+        log.info("Spend ceiling: $%.4f", cfg.spend_ceiling_usd)
+    if cfg.spend_alert_threshold_usd > 0:
+        log.info("Spend alert threshold: $%.4f", cfg.spend_alert_threshold_usd)
 
     try:
         asyncio.run(run_listener(cfg))
@@ -462,3 +579,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

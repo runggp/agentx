@@ -1,4 +1,4 @@
-"""Tests for src/listener.py — parsing and dispatch logic."""
+"""Tests for src/listener.py — parsing, dispatch logic, and spend tracking."""
 
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ import pytest
 from listener import (
     Config,
     dispatch_task,
+    extract_cost_from_output,
     extract_spec,
+    get_cumulative_cost,
     get_status,
     parse_subject,
     process_message,
@@ -175,6 +177,14 @@ class TestGetStatus:
         status = get_status(cfg)
         assert "Recent commits" in status or "Could not read git log" in status
 
+    def test_includes_cumulative_spend(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        (tmp_path / "logs").mkdir()
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        jsonl.write_text('{"cost_usd": 0.05, "cumulative_cost_usd": 0.05}\n')
+        status = get_status(cfg)
+        assert "Cumulative spend" in status
+
 
 # ---------------------------------------------------------------------------
 # write_session_log
@@ -194,6 +204,8 @@ class TestWriteSessionLog:
             "exit_code": 0,
             "timed_out": False,
             "output_tail": "done",
+            "cost_usd": 0.01,
+            "cumulative_cost_usd": 0.01,
         }
         write_session_log(cfg, record)
 
@@ -218,6 +230,8 @@ class TestWriteSessionLog:
                 "exit_code": 0,
                 "timed_out": False,
                 "output_tail": "",
+                "cost_usd": 0.0,
+                "cumulative_cost_usd": 0.0,
             }
             write_session_log(cfg, record)
 
@@ -243,9 +257,90 @@ class TestWriteSessionLog:
             "exit_code": 0,
             "timed_out": False,
             "output_tail": "",
+            "cost_usd": 0.0,
+            "cumulative_cost_usd": 0.0,
         }
         write_session_log(cfg, record)
         assert (tmp_path / "logs" / "sessions").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# extract_cost_from_output
+# ---------------------------------------------------------------------------
+
+class TestExtractCostFromOutput:
+    def test_extracts_cost_from_result_event(self) -> None:
+        output = (
+            '{"type": "system", "subtype": "init"}\n'
+            '{"type": "assistant", "message": {"content": "hello"}}\n'
+            '{"type": "result", "subtype": "success", "cost_usd": "0.012345"}\n'
+        )
+        cost = extract_cost_from_output(output)
+        assert abs(cost - 0.012345) < 1e-9
+
+    def test_sums_multiple_result_events(self) -> None:
+        output = (
+            '{"type": "result", "cost_usd": "0.01"}\n'
+            '{"type": "result", "cost_usd": "0.02"}\n'
+        )
+        cost = extract_cost_from_output(output)
+        assert abs(cost - 0.03) < 1e-9
+
+    def test_ignores_non_json_lines(self) -> None:
+        output = "not json\n{\"type\": \"result\", \"cost_usd\": \"0.005\"}\n"
+        cost = extract_cost_from_output(output)
+        assert abs(cost - 0.005) < 1e-9
+
+    def test_returns_zero_when_no_result_events(self) -> None:
+        output = '{"type": "assistant", "message": "hello"}\n'
+        cost = extract_cost_from_output(output)
+        assert cost == 0.0
+
+    def test_returns_zero_on_empty_output(self) -> None:
+        assert extract_cost_from_output("") == 0.0
+
+    def test_handles_missing_cost_field(self) -> None:
+        output = '{"type": "result", "subtype": "success"}\n'
+        cost = extract_cost_from_output(output)
+        assert cost == 0.0
+
+
+# ---------------------------------------------------------------------------
+# get_cumulative_cost
+# ---------------------------------------------------------------------------
+
+class TestGetCumulativeCost:
+    def test_returns_zero_when_no_log_file(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        assert get_cumulative_cost(cfg) == 0.0
+
+    def test_sums_cost_from_jsonl(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        (tmp_path / "logs").mkdir()
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        jsonl.write_text(
+            '{"cost_usd": 0.01}\n'
+            '{"cost_usd": 0.02}\n'
+            '{"cost_usd": 0.005}\n'
+        )
+        total = get_cumulative_cost(cfg)
+        assert abs(total - 0.035) < 1e-9
+
+    def test_skips_missing_cost_field(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        (tmp_path / "logs").mkdir()
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        jsonl.write_text('{"task_description": "no cost field"}\n{"cost_usd": 0.1}\n')
+        total = get_cumulative_cost(cfg)
+        assert abs(total - 0.1) < 1e-9
+
+    def test_skips_malformed_lines(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        (tmp_path / "logs").mkdir()
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        jsonl.write_text('not json\n{"cost_usd": 0.05}\n')
+        total = get_cumulative_cost(cfg)
+        assert abs(total - 0.05) < 1e-9
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +376,8 @@ class TestDispatchTask:
         assert "started_at" in record
         assert "completed_at" in record
         assert "duration_seconds" in record
+        assert "cost_usd" in record
+        assert "cumulative_cost_usd" in record
 
     @pytest.mark.asyncio
     async def test_session_log_spec_preview_truncated_at_500(self, tmp_path: Path) -> None:
@@ -291,6 +388,114 @@ class TestDispatchTask:
         jsonl = tmp_path / "logs" / "sessions.jsonl"
         record = json.loads(jsonl.read_text().strip())
         assert len(record["spec_preview"]) == 500
+
+    @pytest.mark.asyncio
+    async def test_cost_extracted_and_logged(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text(
+            '#!/bin/bash\necho \'{"type":"result","cost_usd":"0.042"}\'\n'
+        )
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh,
+        )
+        await dispatch_task(cfg, "spec", "cost test")
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        record = json.loads(jsonl.read_text().strip())
+        assert abs(record["cost_usd"] - 0.042) < 1e-9
+        assert abs(record["cumulative_cost_usd"] - 0.042) < 1e-9
+
+    @pytest.mark.asyncio
+    async def test_cumulative_cost_accumulates(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text(
+            '#!/bin/bash\necho \'{"type":"result","cost_usd":"0.01"}\'\n'
+        )
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh,
+        )
+        await dispatch_task(cfg, "spec", "run 1")
+        await dispatch_task(cfg, "spec", "run 2")
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        lines = [json.loads(l) for l in jsonl.read_text().splitlines() if l.strip()]
+        assert abs(lines[0]["cumulative_cost_usd"] - 0.01) < 1e-9
+        assert abs(lines[1]["cumulative_cost_usd"] - 0.02) < 1e-9
+
+    @pytest.mark.asyncio
+    async def test_summary_includes_cost(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text(
+            '#!/bin/bash\necho \'{"type":"result","cost_usd":"0.007"}\'\n'
+        )
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh,
+        )
+        summary = await dispatch_task(cfg, "spec", "cost summary test")
+        assert "Cost:" in summary or "cost" in summary.lower()
+
+    @pytest.mark.asyncio
+    async def test_spend_ceiling_writes_stop_sentinel(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text(
+            '#!/bin/bash\necho \'{"type":"result","cost_usd":"0.10"}\'\n'
+        )
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh,
+            spend_ceiling_usd=0.05,
+        )
+        with patch("listener.send_reply", new_callable=AsyncMock):
+            await dispatch_task(cfg, "spec", "expensive task")
+        assert (tmp_path / ".stop").exists()
+
+    @pytest.mark.asyncio
+    async def test_spend_ceiling_sends_alert_email(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text(
+            '#!/bin/bash\necho \'{"type":"result","cost_usd":"0.10"}\'\n'
+        )
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh,
+            spend_ceiling_usd=0.05,
+            spend_alert_email="admin@example.com",
+        )
+        with patch("listener.send_reply", new_callable=AsyncMock) as mock_reply:
+            await dispatch_task(cfg, "spec", "ceiling task")
+        calls = [c for c in mock_reply.call_args_list if "ceiling" in str(c).lower() or "admin@example.com" in str(c)]
+        assert len(calls) > 0
+
+    @pytest.mark.asyncio
+    async def test_spend_alert_threshold_sends_warning_without_stopping(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text(
+            '#!/bin/bash\necho \'{"type":"result","cost_usd":"0.06"}\'\n'
+        )
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh,
+            spend_alert_threshold_usd=0.05,
+            spend_alert_email="admin@example.com",
+        )
+        with patch("listener.send_reply", new_callable=AsyncMock) as mock_reply:
+            await dispatch_task(cfg, "spec", "alert task")
+        assert not (tmp_path / ".stop").exists()
+        alert_calls = [c for c in mock_reply.call_args_list if "admin@example.com" in str(c)]
+        assert len(alert_calls) > 0
 
     @pytest.mark.asyncio
     async def test_non_zero_exit_noted_in_summary(self, tmp_path: Path) -> None:
@@ -521,3 +726,28 @@ class TestConfigFromEnv:
         monkeypatch.setenv("AGENTX_ALLOWED_SENDERS", "a@example.com, B@EXAMPLE.COM")
         cfg = Config.from_env()
         assert cfg.allowed_senders == frozenset(["a@example.com", "b@example.com"])
+
+    def test_spend_ceiling_defaults_to_zero(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("IMAP_USER", "u@example.com")
+        monkeypatch.setenv("IMAP_PASS", "pass1")
+        monkeypatch.setenv("SMTP_USER", "u@example.com")
+        monkeypatch.setenv("SMTP_PASS", "pass2")
+        monkeypatch.setenv("WORKSPACE_PATH", str(tmp_path))
+        cfg = Config.from_env()
+        assert cfg.spend_ceiling_usd == 0.0
+        assert cfg.spend_alert_threshold_usd == 0.0
+        assert cfg.spend_alert_email == ""
+
+    def test_spend_ceiling_loaded_from_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("IMAP_USER", "u@example.com")
+        monkeypatch.setenv("IMAP_PASS", "pass1")
+        monkeypatch.setenv("SMTP_USER", "u@example.com")
+        monkeypatch.setenv("SMTP_PASS", "pass2")
+        monkeypatch.setenv("WORKSPACE_PATH", str(tmp_path))
+        monkeypatch.setenv("AGENTX_SPEND_CEILING_USD", "5.00")
+        monkeypatch.setenv("AGENTX_SPEND_ALERT_USD", "3.00")
+        monkeypatch.setenv("AGENTX_SPEND_ALERT_EMAIL", "admin@example.com")
+        cfg = Config.from_env()
+        assert cfg.spend_ceiling_usd == 5.0
+        assert cfg.spend_alert_threshold_usd == 3.0
+        assert cfg.spend_alert_email == "admin@example.com"
