@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.6.1",
+  "checkpoint_id": "7e9331416441",
+  "strategy": "manual-commit",
+  "branch": "ralph/workspace-20260517-191426",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "IMPLEMENTATION_PLAN.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7e/9331416441/0/metadata.json",
+      "transcript": "/7e/9331416441/0/full.jsonl",
+      "content_hash": "/7e/9331416441/0/content_hash.txt",
+      "prompt": "/7e/9331416441/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1705,
+    "cache_creation_tokens": 162252,
+    "cache_read_tokens": 1465950,
+    "output_tokens": 10638,
+    "api_call_count": 56
+  }
+}
