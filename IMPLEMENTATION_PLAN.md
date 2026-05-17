@@ -2,7 +2,6 @@
 
 ## Current Focus
 
-- [ ] **Phase 0d: Structured logging** — JSON log per session, readable by future agent iterations
 - [ ] **Phase 0f: First self-task** — Send spec email to agentx@runggp.com: "deploy this harness to VPS"
 - [ ] **Phase 1: Spend tracking** — Log token estimates per iteration, session ceiling, email alert on threshold
 - [ ] **Phase 2: Local models** — Install Ollama, pull Qwen3-14B, wire LiteLLM, benchmark vs Claude API
@@ -14,6 +13,7 @@
 - [x] **Phase 0a: VPS baseline** — SSH, Docker, git, credentials — see `specs/vps-setup.md`
 - [x] **Phase 0b: Lift and shift** — scaffold runs on VPS with Claude API (OAuth mode)
 - [x] **Phase 0c: VPS compose** — `vps-compose.yml` with VPS paths, persistent workspace, Entire enabled
+- [x] **Phase 0d: Structured logging** — `write_session_log` in `src/listener.py` writes `logs/sessions/<uuid>.json` per ralph.sh invocation and appends to `logs/sessions.jsonl`. Schema: session_id, started_at, completed_at, duration_seconds, task_description, spec_preview, sender, exit_code, timed_out, output_tail. Future agent iterations read `sessions.jsonl` to understand past work.
 - [x] **Phase 0e: Email listener** — `src/listener.py` implements async IMAP polling (aioimaplib), spec extraction from body/.md attachment, Ralph dispatch via subprocess, SMTP reply (aiosmtplib), and `[stop]`/`[status]` control commands. Tests in `src/tests/test_listener.py`. Run on VPS host: `uv run --env-file /opt/agentx/secrets.env src/listener.py`
 
 ## Notes
@@ -35,3 +35,4 @@ uv run --dev mypy src/listener.py
 - Docker container (node:22-slim) has no Python — listener runs on VPS host, not inside Docker
 - `pyproject.toml` specifies Python >=3.14; uv installs the correct version automatically
 - Listener secrets come from `secrets.env` via `--env-file` flag; never baked into Docker
+- In the build agent environment, `src/` files may be owned by root (from prior Docker-run git checkout). Use git plumbing (`git hash-object -w`, `git update-index --cacheinfo`) to stage changes without needing filesystem write access to root-owned files.

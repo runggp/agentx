@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import email
 import email.policy
+import json
 import textwrap
 from email.message import EmailMessage
 from pathlib import Path
@@ -18,6 +19,7 @@ from listener import (
     get_status,
     parse_subject,
     process_message,
+    write_session_log,
     write_stop_sentinel,
 )
 
@@ -175,21 +177,120 @@ class TestGetStatus:
 
 
 # ---------------------------------------------------------------------------
+# write_session_log
+# ---------------------------------------------------------------------------
+
+class TestWriteSessionLog:
+    def test_creates_json_file_in_logs_sessions(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        record = {
+            "session_id": "test-session-id",
+            "started_at": "2024-01-01T00:00:00+00:00",
+            "completed_at": "2024-01-01T00:01:00+00:00",
+            "duration_seconds": 60.0,
+            "task_description": "deploy",
+            "spec_preview": "# Spec",
+            "sender": "user@example.com",
+            "exit_code": 0,
+            "timed_out": False,
+            "output_tail": "done",
+        }
+        write_session_log(cfg, record)
+
+        session_file = tmp_path / "logs" / "sessions" / "test-session-id.json"
+        assert session_file.exists()
+        data = json.loads(session_file.read_text())
+        assert data["session_id"] == "test-session-id"
+        assert data["task_description"] == "deploy"
+        assert data["exit_code"] == 0
+
+    def test_appends_to_sessions_jsonl(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        for i, sid in enumerate(["id-1", "id-2"]):
+            record = {
+                "session_id": sid,
+                "started_at": "2024-01-01T00:00:00+00:00",
+                "completed_at": "2024-01-01T00:01:00+00:00",
+                "duration_seconds": float(i),
+                "task_description": f"task {i}",
+                "spec_preview": "",
+                "sender": "",
+                "exit_code": 0,
+                "timed_out": False,
+                "output_tail": "",
+            }
+            write_session_log(cfg, record)
+
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        lines = [l for l in jsonl.read_text().splitlines() if l.strip()]
+        assert len(lines) == 2
+        first = json.loads(lines[0])
+        assert first["session_id"] == "id-1"
+        second = json.loads(lines[1])
+        assert second["session_id"] == "id-2"
+
+    def test_creates_logs_directory_if_missing(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        assert not (tmp_path / "logs").exists()
+        record = {
+            "session_id": "abc",
+            "started_at": "2024-01-01T00:00:00+00:00",
+            "completed_at": "2024-01-01T00:00:01+00:00",
+            "duration_seconds": 1.0,
+            "task_description": "",
+            "spec_preview": "",
+            "sender": "",
+            "exit_code": 0,
+            "timed_out": False,
+            "output_tail": "",
+        }
+        write_session_log(cfg, record)
+        assert (tmp_path / "logs" / "sessions").is_dir()
+
+
+# ---------------------------------------------------------------------------
 # dispatch_task
 # ---------------------------------------------------------------------------
 
 class TestDispatchTask:
     @pytest.mark.asyncio
-    async def test_writes_task_file_and_runs_ralph(self, tmp_path: Path) -> None:
+    async def test_writes_task_to_implementation_plan_and_runs_ralph(self, tmp_path: Path) -> None:
         cfg = make_config(tmp_path)
         spec = "# Deploy\n\nRun the thing."
         summary = await dispatch_task(cfg, spec, "deploy the thing")
 
-        task_file = tmp_path / "TASK.md"
-        assert task_file.exists()
-        assert "Deploy" in task_file.read_text()
+        plan_file = tmp_path / "IMPLEMENTATION_PLAN.md"
+        assert plan_file.exists()
+        assert "Deploy" in plan_file.read_text()
         assert "deploy the thing" in summary
         assert "Ralph loop" in summary
+
+    @pytest.mark.asyncio
+    async def test_session_log_written_after_dispatch(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        await dispatch_task(cfg, "# Spec", "log test task", sender="tester@example.com")
+
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        assert jsonl.exists()
+        record = json.loads(jsonl.read_text().strip())
+        assert record["task_description"] == "log test task"
+        assert record["sender"] == "tester@example.com"
+        assert record["exit_code"] == 0
+        assert record["timed_out"] is False
+        assert "session_id" in record
+        assert "started_at" in record
+        assert "completed_at" in record
+        assert "duration_seconds" in record
+
+    @pytest.mark.asyncio
+    async def test_session_log_spec_preview_truncated_at_500(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        long_spec = "x" * 1000
+        await dispatch_task(cfg, long_spec, "big spec")
+
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        record = json.loads(jsonl.read_text().strip())
+        assert len(record["spec_preview"]) == 500
 
     @pytest.mark.asyncio
     async def test_non_zero_exit_noted_in_summary(self, tmp_path: Path) -> None:
@@ -210,6 +311,22 @@ class TestDispatchTask:
         )
         summary = await dispatch_task(cfg, "spec", "desc")
         assert "exited with code 1" in summary
+
+    @pytest.mark.asyncio
+    async def test_non_zero_exit_recorded_in_session_log(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text("#!/bin/bash\nexit 2\n")
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh,
+        )
+        await dispatch_task(cfg, "spec", "failing task")
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        record = json.loads(jsonl.read_text().strip())
+        assert record["exit_code"] == 2
+        assert record["timed_out"] is False
 
     @pytest.mark.asyncio
     async def test_writes_to_implementation_plan(self, tmp_path: Path) -> None:
@@ -234,6 +351,22 @@ class TestDispatchTask:
         summary = await dispatch_task(cfg, "spec", "slow task")
         assert "timed out" in summary
 
+    @pytest.mark.asyncio
+    async def test_timeout_recorded_in_session_log(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text("#!/bin/bash\nsleep 999\n")
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh, ralph_timeout=1,
+        )
+        await dispatch_task(cfg, "spec", "slow task")
+        jsonl = tmp_path / "logs" / "sessions.jsonl"
+        record = json.loads(jsonl.read_text().strip())
+        assert record["timed_out"] is True
+        assert record["exit_code"] is None
+
 
 # ---------------------------------------------------------------------------
 # process_message (integration-style with mocks)
@@ -255,6 +388,20 @@ class TestProcessMessage:
         mock_reply.assert_awaited_once()
         _, reply_to, _, body = mock_reply.call_args[0]
         assert "Work done" in body
+
+    @pytest.mark.asyncio
+    async def test_task_dispatch_receives_sender(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        raw = make_email("[task] build listener", "# Spec\n\nDo it.", "ralph@example.com")
+
+        with (
+            patch("listener.dispatch_task", new_callable=AsyncMock, return_value="done") as mock_dispatch,
+            patch("listener.send_reply", new_callable=AsyncMock),
+        ):
+            await process_message(cfg, raw)
+
+        _, kwargs = mock_dispatch.call_args
+        assert kwargs.get("sender") == "ralph@example.com"
 
     @pytest.mark.asyncio
     async def test_stop_prefix_writes_sentinel_and_replies(self, tmp_path: Path) -> None:

@@ -16,12 +16,15 @@ Subject prefixes:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import email
 import email.policy
+import json
 import logging
 import os
 import subprocess
 import sys
+import uuid
 from dataclasses import dataclass
 from email.message import EmailMessage
 from pathlib import Path
@@ -146,10 +149,46 @@ def parse_subject(raw_subject: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Session logging
+# ---------------------------------------------------------------------------
+
+def write_session_log(cfg: Config, record: dict) -> None:  # type: ignore[type-arg]
+    """Write a JSON session record to logs/sessions/<id>.json and append to sessions.jsonl.
+
+    Schema:
+        session_id       — UUID4 string
+        started_at       — ISO-8601 UTC timestamp
+        completed_at     — ISO-8601 UTC timestamp
+        duration_seconds — float elapsed time
+        task_description — human-readable task name from email subject
+        spec_preview     — first 500 chars of spec (full spec may be large)
+        sender           — email address that triggered the session
+        exit_code        — ralph.sh exit code (null on timeout)
+        timed_out        — true if ralph was killed due to timeout
+        output_tail      — last 100 lines of ralph stdout+stderr
+
+    Future agent iterations can read sessions.jsonl to understand what has been
+    attempted, how long tasks took, and what exit codes were produced.
+    """
+    log_dir = cfg.workspace / "logs" / "sessions"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    session_id: str = record["session_id"]
+    session_file = log_dir / f"{session_id}.json"
+    session_file.write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    jsonl_file = cfg.workspace / "logs" / "sessions.jsonl"
+    with jsonl_file.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record) + "\n")
+
+    log.info("Session log written to %s", session_file)
+
+
+# ---------------------------------------------------------------------------
 # Actions
 # ---------------------------------------------------------------------------
 
-async def dispatch_task(cfg: Config, spec: str, description: str) -> str:
+async def dispatch_task(cfg: Config, spec: str, description: str, sender: str = "") -> str:
     """Write spec into IMPLEMENTATION_PLAN.md and run ralph.sh.
 
     The spec is prepended as a new task so ralph's normal plan-reading
@@ -180,6 +219,9 @@ async def dispatch_task(cfg: Config, spec: str, description: str) -> str:
     env = {**os.environ, "WORKSPACE_PATH": str(cfg.workspace)}
     log.info("Launching ralph.sh at %s", cfg.ralph_sh)
 
+    session_id = str(uuid.uuid4())
+    started_at = datetime.datetime.now(datetime.timezone.utc)
+
     proc = await asyncio.create_subprocess_exec(
         str(cfg.ralph_sh),
         stdout=subprocess.PIPE,
@@ -187,24 +229,48 @@ async def dispatch_task(cfg: Config, spec: str, description: str) -> str:
         env=env,
         cwd=str(cfg.workspace),
     )
+    timed_out = False
+    exit_code: int | None = None
+    output = ""
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=cfg.ralph_timeout)
+        output = stdout.decode("utf-8", errors="replace") if stdout else ""
+        exit_code = proc.returncode
     except asyncio.TimeoutError:
         proc.kill()
         await proc.communicate()
+        timed_out = True
         log.error("ralph.sh timed out after %ds", cfg.ralph_timeout)
+
+    completed_at = datetime.datetime.now(datetime.timezone.utc)
+    duration = (completed_at - started_at).total_seconds()
+
+    record: dict = {  # type: ignore[type-arg]
+        "session_id": session_id,
+        "started_at": started_at.isoformat(),
+        "completed_at": completed_at.isoformat(),
+        "duration_seconds": duration,
+        "task_description": description,
+        "spec_preview": spec[:500],
+        "sender": sender,
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "output_tail": "\n".join(output.splitlines()[-100:]),
+    }
+    write_session_log(cfg, record)
+
+    if timed_out:
         return f"Ralph loop timed out after {cfg.ralph_timeout // 60} minutes.\n\nTask: {description}"
 
-    output = stdout.decode("utf-8", errors="replace") if stdout else ""
-    exit_code = proc.returncode or 0
-    status = "completed" if exit_code == 0 else f"exited with code {exit_code}"
+    resolved_exit = exit_code or 0
+    status = "completed" if resolved_exit == 0 else f"exited with code {resolved_exit}"
     summary = (
         f"Ralph loop {status}.\n\n"
         f"Task: {description}\n\n"
         f"--- Loop output (last 100 lines) ---\n"
         + "\n".join(output.splitlines()[-100:])
     )
-    log.info("Ralph finished (exit=%d)", exit_code)
+    log.info("Ralph finished (exit=%d)", resolved_exit)
     return summary
 
 
@@ -292,7 +358,7 @@ async def process_message(cfg: Config, raw: bytes) -> None:
         if not spec:
             reply_body = "Could not extract a spec from your email. Please include a markdown spec in the body or attach a .md file."
         else:
-            reply_body = await dispatch_task(cfg, spec, description)
+            reply_body = await dispatch_task(cfg, spec, description, sender=from_addr)
         await send_reply(cfg, from_addr, subject, reply_body)
 
     elif prefix == "stop":
