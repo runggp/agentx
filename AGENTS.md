@@ -28,6 +28,7 @@ docker compose up
 - Tests: `pytest src/tests/`
 - Lint: `ruff check src/`
 - Types: `mypy src/`
+- Session logs: `logs/sessions/<session-id>.json` after each iteration
 
 ## Operational Notes
 
