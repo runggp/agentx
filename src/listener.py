@@ -49,6 +49,8 @@ class Config:
     workspace: Path
     ralph_sh: Path
     poll_interval: int = 30
+    allowed_senders: frozenset[str] = frozenset()
+    ralph_timeout: int = 1800
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -60,6 +62,11 @@ class Config:
 
         workspace = Path(os.environ.get("WORKSPACE_PATH", "/opt/agentx"))
         ralph_sh = Path(os.environ.get("RALPH_SH", str(workspace / "ralph.sh")))
+
+        raw_senders = os.environ.get("AGENTX_ALLOWED_SENDERS", "")
+        allowed_senders: frozenset[str] = frozenset(
+            s.strip().lower() for s in raw_senders.split(",") if s.strip()
+        )
 
         return cls(
             imap_host=os.environ.get("IMAP_HOST", "imap.hostinger.com"),
@@ -73,6 +80,8 @@ class Config:
             workspace=workspace,
             ralph_sh=ralph_sh,
             poll_interval=int(os.environ.get("AGENTX_POLL_INTERVAL", "30")),
+            allowed_senders=allowed_senders,
+            ralph_timeout=int(os.environ.get("AGENTX_RALPH_TIMEOUT", "1800")),
         )
 
 
@@ -141,13 +150,32 @@ def parse_subject(raw_subject: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 async def dispatch_task(cfg: Config, spec: str, description: str) -> str:
-    """Write spec to workspace/TASK.md and run ralph.sh.
+    """Write spec into IMPLEMENTATION_PLAN.md and run ralph.sh.
+
+    The spec is prepended as a new task so ralph's normal plan-reading
+    flow picks it up on the next iteration.
 
     Returns a human-readable work summary string.
     """
-    task_file = cfg.workspace / "TASK.md"
-    task_file.write_text(f"# Task\n\n{description}\n\n{spec}\n", encoding="utf-8")
-    log.info("Wrote spec to %s", task_file)
+    plan_file = cfg.workspace / "IMPLEMENTATION_PLAN.md"
+    task_block = f"- [ ] **Email task:** {description}\n\n{spec}\n\n"
+    if plan_file.exists():
+        existing = plan_file.read_text(encoding="utf-8")
+        # Insert after the "## Current Focus" heading
+        marker = "## Current Focus"
+        if marker in existing:
+            plan_file.write_text(
+                existing.replace(marker, f"{marker}\n\n{task_block}", 1),
+                encoding="utf-8",
+            )
+        else:
+            plan_file.write_text(task_block + existing, encoding="utf-8")
+    else:
+        plan_file.write_text(
+            f"# Implementation Plan\n\n## Current Focus\n\n{task_block}",
+            encoding="utf-8",
+        )
+    log.info("Wrote task to %s", plan_file)
 
     env = {**os.environ, "WORKSPACE_PATH": str(cfg.workspace)}
     log.info("Launching ralph.sh at %s", cfg.ralph_sh)
@@ -159,9 +187,15 @@ async def dispatch_task(cfg: Config, spec: str, description: str) -> str:
         env=env,
         cwd=str(cfg.workspace),
     )
-    stdout, _ = await proc.communicate()
-    output = stdout.decode("utf-8", errors="replace") if stdout else ""
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=cfg.ralph_timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        log.error("ralph.sh timed out after %ds", cfg.ralph_timeout)
+        return f"Ralph loop timed out after {cfg.ralph_timeout // 60} minutes.\n\nTask: {description}"
 
+    output = stdout.decode("utf-8", errors="replace") if stdout else ""
     exit_code = proc.returncode or 0
     status = "completed" if exit_code == 0 else f"exited with code {exit_code}"
     summary = (
@@ -242,6 +276,15 @@ async def process_message(cfg: Config, raw: bytes) -> None:
 
     log.info("Processing message from=%r subject=%r", from_addr, subject)
 
+    if cfg.allowed_senders:
+        import re as _re
+        # Extract bare address from "Name <addr>" format
+        m = _re.search(r"<([^>]+)>", from_addr)
+        bare = (m.group(1) if m else from_addr).lower().strip()
+        if bare not in cfg.allowed_senders:
+            log.warning("Rejected message from unauthorised sender %r", from_addr)
+            return
+
     prefix, description = parse_subject(subject)
 
     if prefix == "task":
@@ -285,13 +328,14 @@ async def poll_once(cfg: Config, imap: aioimaplib.IMAP4_SSL) -> None:
                 log.warning("FETCH failed for uid %s: %s", uid, fetch_status)
                 continue
 
+            # aioimaplib returns [metadata_line, message_bytes, b')']
+            # The actual RFC822 body is the largest bytes item in the response.
             raw: bytes | None = None
-            for item in fetch_data:
-                if isinstance(item, bytes) and item != b")":
-                    raw = item
-                    break
+            candidates = [item for item in fetch_data if isinstance(item, bytes) and item != b")"]
+            if candidates:
+                raw = max(candidates, key=len)
 
-            if raw is None:
+            if not raw:
                 log.warning("No body data for uid %s", uid)
                 continue
 

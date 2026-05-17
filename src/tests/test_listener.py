@@ -211,6 +211,29 @@ class TestDispatchTask:
         summary = await dispatch_task(cfg, "spec", "desc")
         assert "exited with code 1" in summary
 
+    @pytest.mark.asyncio
+    async def test_writes_to_implementation_plan(self, tmp_path: Path) -> None:
+        cfg = make_config(tmp_path)
+        plan = tmp_path / "IMPLEMENTATION_PLAN.md"
+        plan.write_text("# Implementation Plan\n\n## Current Focus\n\nexisting task\n")
+        await dispatch_task(cfg, "# Spec\n\nDo it.", "email task desc")
+        content = plan.read_text()
+        assert "email task desc" in content
+        assert "existing task" in content
+
+    @pytest.mark.asyncio
+    async def test_timeout_kills_process_and_returns_message(self, tmp_path: Path) -> None:
+        ralph_sh = tmp_path / "ralph.sh"
+        ralph_sh.write_text("#!/bin/bash\nsleep 999\n")
+        ralph_sh.chmod(0o755)
+        cfg = Config(
+            imap_host="x", imap_port=993, imap_user="u", imap_pass="p",
+            smtp_host="x", smtp_port=465, smtp_user="u", smtp_pass="p",
+            workspace=tmp_path, ralph_sh=ralph_sh, ralph_timeout=1,
+        )
+        summary = await dispatch_task(cfg, "spec", "slow task")
+        assert "timed out" in summary
+
 
 # ---------------------------------------------------------------------------
 # process_message (integration-style with mocks)
@@ -267,6 +290,39 @@ class TestProcessMessage:
         mock_reply.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_allowed_sender_passes(self, tmp_path: Path) -> None:
+        cfg = Config(
+            **{**make_config(tmp_path).__dict__,
+               "allowed_senders": frozenset(["user@example.com"])},
+        )
+        raw = make_email("[status]", "", "user@example.com")
+        with patch("listener.send_reply", new_callable=AsyncMock) as mock_reply:
+            await process_message(cfg, raw)
+        mock_reply.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_unauthorised_sender_rejected(self, tmp_path: Path) -> None:
+        cfg = Config(
+            **{**make_config(tmp_path).__dict__,
+               "allowed_senders": frozenset(["allowed@example.com"])},
+        )
+        raw = make_email("[task] do something", "spec", "evil@example.com")
+        with patch("listener.dispatch_task", new_callable=AsyncMock) as mock_dispatch:
+            await process_message(cfg, raw)
+        mock_dispatch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_name_bracket_addr_format_parsed(self, tmp_path: Path) -> None:
+        cfg = Config(
+            **{**make_config(tmp_path).__dict__,
+               "allowed_senders": frozenset(["user@example.com"])},
+        )
+        raw = make_email("[status]", "", "User Name <user@example.com>")
+        with patch("listener.send_reply", new_callable=AsyncMock) as mock_reply:
+            await process_message(cfg, raw)
+        mock_reply.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_task_with_empty_spec_sends_error_reply(self, tmp_path: Path) -> None:
         cfg = make_config(tmp_path)
         msg = EmailMessage()
@@ -308,3 +364,13 @@ class TestConfigFromEnv:
         cfg = Config.from_env()
         assert cfg.imap_user == "u@example.com"
         assert cfg.workspace == tmp_path
+
+    def test_allowed_senders_parsed_from_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("IMAP_USER", "u@example.com")
+        monkeypatch.setenv("IMAP_PASS", "pass1")
+        monkeypatch.setenv("SMTP_USER", "u@example.com")
+        monkeypatch.setenv("SMTP_PASS", "pass2")
+        monkeypatch.setenv("WORKSPACE_PATH", str(tmp_path))
+        monkeypatch.setenv("AGENTX_ALLOWED_SENDERS", "a@example.com, B@EXAMPLE.COM")
+        cfg = Config.from_env()
+        assert cfg.allowed_senders == frozenset(["a@example.com", "b@example.com"])
