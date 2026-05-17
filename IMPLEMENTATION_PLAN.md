@@ -2,7 +2,6 @@
 
 ## Current Focus
 
-- [ ] **Phase 0f: First self-task** — Send spec email to agentx@runggp.com: "deploy this harness to VPS"
 - [ ] **Phase 1: Spend tracking** — Log token estimates per iteration, session ceiling, email alert on threshold
 - [ ] **Phase 2: Local models** — Install Ollama, pull Qwen3-14B, wire LiteLLM, benchmark vs Claude API
 - [ ] **Phase 2.1: Model router** — Route tasks to models based on type; local for cost, API for quality
@@ -15,6 +14,7 @@
 - [x] **Phase 0c: VPS compose** — `vps-compose.yml` with VPS paths, persistent workspace, Entire enabled
 - [x] **Phase 0d: Structured logging** — `write_session_log` in `src/listener.py` writes `logs/sessions/<uuid>.json` per ralph.sh invocation and appends to `logs/sessions.jsonl`. Schema: session_id, started_at, completed_at, duration_seconds, task_description, spec_preview, sender, exit_code, timed_out, output_tail. Future agent iterations read `sessions.jsonl` to understand past work.
 - [x] **Phase 0e: Email listener** — `src/listener.py` implements async IMAP polling (aioimaplib), spec extraction from body/.md attachment, Ralph dispatch via subprocess, SMTP reply (aiosmtplib), and `[stop]`/`[status]` control commands. Tests in `src/tests/test_listener.py`. Run on VPS host: `uv run --env-file /opt/agentx/secrets.env src/listener.py`
+- [x] **Phase 0f: First self-task** — `send_self_task.py` at workspace root sends a `[task]` email to agentx@runggp.com. Default spec is "deploy this harness to VPS". Run: `uv run --env-file /opt/agentx/secrets.env send_self_task.py`. Accepts `--subject` and `--spec` flags to customise.
 
 ## Notes
 
