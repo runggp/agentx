@@ -3,7 +3,6 @@
 ## Current Focus
 
 - [ ] **Phase 0f: First self-task** — Send spec email to agentx@runggp.com: "deploy this harness to VPS"
-- [ ] **Phase 1: Spend tracking** — Log token estimates per iteration, session ceiling, email alert on threshold
 - [ ] **Phase 2: Local models** — Install Ollama, pull Qwen3-14B, wire LiteLLM, benchmark vs Claude API
 - [ ] **Phase 2.1: Model router** — Route tasks to models based on type; local for cost, API for quality
 - [ ] **Phase 3: Self-monitoring** — Agent reads its own cost log and audit trail as tool inputs
@@ -15,6 +14,7 @@
 - [x] **Phase 0c: VPS compose** — `vps-compose.yml` with VPS paths, persistent workspace, Entire enabled
 - [x] **Phase 0d: Structured logging** — Phase 0d complete: `scaffold/lib/session-logger.js` parses Claude stream-json after each iteration, writes `logs/sessions/<session-id>.json` with timestamp, model, cost, tokens, tools_called, files_changed, commit_hash. Called from `scaffold/scripts/loop.sh` — non-blocking, degrades gracefully. Tests in `scaffold/tests/test_session_logger.js` (12 tests).
 - [x] **Phase 0e: Email listener** — `src/listener.py` implements async IMAP polling (aioimaplib), spec extraction from body/.md attachment, Ralph dispatch via subprocess, SMTP reply (aiosmtplib), and `[stop]`/`[status]` control commands. Tests in `src/tests/test_listener.py`. Run on VPS host: `uv run --env-file /opt/agentx/secrets.env src/listener.py`
+- [x] **Phase 1: Spend tracking** — `check-spend` command added to `scaffold/lib/session-logger.js`. Reads session JSON, sums iteration costs, exits 2 if `RALPH_SPEND_CEILING_USD` is exceeded. `loop.sh` checks spend after every iteration and stops with a `send-notification.sh` email alert. Ceiling defaults to 0 (disabled). 18 tests pass (up from 12). `secrets.env.example` documents the new var.
 
 ## Notes
 
