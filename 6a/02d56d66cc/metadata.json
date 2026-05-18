@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.6.1",
+  "checkpoint_id": "6a02d56d66cc",
+  "strategy": "manual-commit",
+  "branch": "ralph/workspace-20260518-153831",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "AGENTS.md",
+    "IMPLEMENTATION_PLAN.md",
+    "litellm-config.yaml",
+    "secrets.env.example",
+    "vps-compose.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6a/02d56d66cc/0/metadata.json",
+      "transcript": "/6a/02d56d66cc/0/full.jsonl",
+      "content_hash": "/6a/02d56d66cc/0/content_hash.txt",
+      "prompt": "/6a/02d56d66cc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 201,
+    "cache_creation_tokens": 37287,
+    "cache_read_tokens": 653470,
+    "output_tokens": 736,
+    "api_call_count": 25
+  }
+}
