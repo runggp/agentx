@@ -193,13 +193,18 @@ async def dispatch_task(cfg: Config, spec: str, description: str) -> str:
         env=env,
         cwd=str(cfg.workspace),
     )
-    try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=cfg.ralph_timeout)
-    except asyncio.TimeoutError:
+    communicate_task = asyncio.create_task(proc.communicate())
+    done, _ = await asyncio.wait([communicate_task], timeout=cfg.ralph_timeout)
+    if not done:
         proc.kill()
-        await proc.wait()
+        communicate_task.cancel()
+        try:
+            await communicate_task
+        except (asyncio.CancelledError, Exception):
+            pass
         log.error("ralph.sh timed out after %ds", cfg.ralph_timeout)
         return f"Ralph loop timed out after {cfg.ralph_timeout // 60} minutes.\n\nTask: {description}"
+    stdout, _ = communicate_task.result()
 
     output = stdout.decode("utf-8", errors="replace") if stdout else ""
     exit_code = proc.returncode or 0
