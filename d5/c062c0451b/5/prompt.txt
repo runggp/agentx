@@ -1,0 +1,37 @@
+## Prior Session Audit Trail
+
+**2 session(s) logged.** Total spend: $0.0000. Total iterations: 1.
+
+Recent sessions (newest first, showing up to 5):
+- 2026-05-18 00:44 | ralph/workspace-20260518-004418 | 0 iter(s) | $0.0000 | 0 file(s) changed
+- 2026-05-18 00:24 | ralph/workspace-20260518-002456 | 1 iter(s) | $0.0000 | 1 file(s) changed
+
+0a. Study `specs/*` using one subagent per spec file to learn the application specifications.
+0b. Study @IMPLEMENTATION_PLAN.md.
+0c. For reference, the application source code is in `src/*`.
+
+1. Your task is to implement functionality per the specifications using parallel subagents. Follow @IMPLEMENTATION_PLAN.md and choose the most important item to address using this priority order:
+   - **First**: any `[~]` item (implemented but unverified). Attempt real verification. If you cannot verify from inside this container (e.g. Python is not available, or the side-effect requires the VPS host), document exactly why in @IMPLEMENTATION_PLAN.md and STOP — do not advance to new `[ ]` work. The operator must unblock verification before proceeding.
+   - **Then**: the next `[ ]` item, only if no `[~]` items exist or all `[~]` items are explicitly blocked on operator action.
+   Before making changes, search the codebase (don't assume not implemented) using subagents — one subagent per distinct file or component. Only 1 subagent for build/tests. Use strong reasoning when needed for debugging or architectural decisions.
+2. After implementing functionality or resolving problems, run the tests for that unit of code that was improved. If functionality is missing then it's your job to add it as per the application specifications. Ultrathink.
+3. When you discover issues, immediately update @IMPLEMENTATION_PLAN.md with your findings using a subagent. When resolved, update and remove the item.
+4. When tests pass, update @IMPLEMENTATION_PLAN.md using the correct completion status, then `git add -A` then `git commit` with a message describing the changes. After the commit, `git push`.
+   - Mark `[x]` (verified complete) only when behavior is proven by a real execution — not mocked. For external systems (email, HTTP, subprocesses), this means an integration test or manual observation that the actual side-effect occurred.
+   - Mark `[~]` (implemented, pending verification) when unit tests pass but real behavior has not been observed. Clearly note what is mocked and what remains unverified.
+   - Never promote `[~]` to `[x]` without evidence that the real system worked end-to-end.
+
+LIMITS: Spawn only as many parallel subagents as there are distinct files or components to examine — never spawn subagents for work that can be done in a single pass. Write and test operations always use 1 subagent. Maximum 5 loop iterations per session — stop and summarize progress rather than exceed this.
+
+99999. Important: When authoring documentation, capture the why — tests and implementation importance.
+999999. Important: Single sources of truth, no migrations/adapters. If tests unrelated to your work fail, resolve them as part of the increment.
+9999999. As soon as there are no build or test errors create a git tag. If there are no git tags start at 0.0.0 and increment patch by 1 for example 0.0.1 if 0.0.0 does not exist.
+99999999. You may add extra logging if required to debug issues.
+999999999. Keep @IMPLEMENTATION_PLAN.md current with learnings using a subagent — future work depends on this to avoid duplicating efforts. Update especially after finishing your turn.
+9999999999. When you learn something new about how to run the application, update @AGENTS.md using a subagent but keep it brief.
+99999999999. For any bugs you notice, resolve them or document them in @IMPLEMENTATION_PLAN.md using a subagent even if it is unrelated to the current piece of work.
+999999999999. Implement functionality completely. Placeholders and stubs waste efforts and time redoing the same work.
+9999999999999999. IMPORTANT: Mocked unit tests prove implementation correctness only. They do NOT verify that external systems (email, SMTP, IMAP, HTTP, subprocesses) actually work. Any phase whose acceptance criteria require a real side-effect must be marked `[~]` until that side-effect is observed. Document explicitly: what was tested with mocks, and what verification remains.
+9999999999999. When @IMPLEMENTATION_PLAN.md becomes large periodically clean out the items that are completed from the file using a subagent.
+99999999999999. If you find inconsistencies in the specs/* then use a subagent with 'ultrathink' requested to update the specs.
+999999999999999. IMPORTANT: Keep @AGENTS.md operational only — status updates and progress notes belong in `IMPLEMENTATION_PLAN.md`. A bloated AGENTS.md pollutes every future loop's context.
