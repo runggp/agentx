@@ -1,0 +1,11 @@
+{
+  "session_id": "20260518-024301",
+  "branch": "ralph/workspace-20260518-024301",
+  "original_branch": "main",
+  "mode": "build",
+  "model": "claude-sonnet-4-6",
+  "max_iterations": 5,
+  "started_at": "2026-05-18T02:43:04.594Z",
+  "head_at_start": "fbe623fb89e48fe021cce39c7d368a4dc28d990d",
+  "iterations": []
+}

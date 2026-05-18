@@ -7,6 +7,12 @@
 
 ## Current Focus
 
+- [ ] **Email task:** write a haiku Johnny 5 alive
+
+> Write a haiku about humans and AI programming.
+
+
+
 - [~] **Phase 0f: First self-task** — `src/send_task.py` runs on VPS host and sends email successfully (confirmed). Pending: listener picks up incoming `[task]` email, dispatches a ralph loop, and sends a reply. Note: send_task.py must run on the VPS host — email credentials are not available inside the Docker container.
 - [ ] **Phase 2: Local models** — Install Ollama on VPS host, pull a model (see `specs/local-models.md` once written), wire LiteLLM proxy, benchmark vs Claude API. Requires manual Ollama install before ralph can proceed.
 - [ ] **Phase 2.1: Model router** — Route tasks to models based on type; local for cost, API for quality
