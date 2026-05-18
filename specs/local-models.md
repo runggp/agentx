@@ -47,19 +47,36 @@ Anthropic SDK will hit transparently when `ANTHROPIC_BASE_URL` is overridden.
 
 ```yaml
 model_list:
-  - model_name: qwen3:8b
+  - model_name: ollama/qwen3:8b
     litellm_params:
       model: ollama/qwen3:8b
-      api_base: http://localhost:11434
+      api_base: http://127.0.0.1:11434
+      timeout: 3600
 
-  - model_name: claude-sonnet-4-6          # passthrough — keep Claude available
+  - model_name: ollama/qwen3:14b
+    litellm_params:
+      model: ollama/qwen3:14b
+      api_base: http://127.0.0.1:11434
+      timeout: 3600
+
+  - model_name: claude-sonnet-4-6
     litellm_params:
       model: anthropic/claude-sonnet-4-6
       api_key: os.environ/ANTHROPIC_API_KEY
 
-general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY  # set in secrets.env; any random string works
+litellm_settings:
+  request_timeout: 600
+  drop_params: true
 ```
+
+Notes:
+- `model_name` must match `RALPH_MODEL` exactly (including the `ollama/` prefix)
+- Use `127.0.0.1` not `localhost` to avoid IPv6 fallback overhead
+- `drop_params: true` prevents unknown Anthropic params from erroring on Ollama
+- `request_timeout: 600` forces connections to close after 10 min, preventing an aiohttp
+  connection-reuse bug that causes 500 errors after ~48 min of accumulated requests
+- Do not set `master_key` — if `LITELLM_MASTER_KEY` env var is present LiteLLM enforces
+  auth on `/health`, which breaks the scaffold's health check poller
 
 ### `vps-compose.yml` changes
 
@@ -80,10 +97,8 @@ litellm:
 Add to `secrets.env` on VPS:
 
 ```bash
-# LiteLLM proxy
-LITELLM_MASTER_KEY=some-random-secret      # any string; LiteLLM needs it
 ANTHROPIC_BASE_URL=http://localhost:4000   # redirect SDK to LiteLLM
-ANTHROPIC_API_KEY=sk-...                   # still needed for Claude passthrough
+ANTHROPIC_API_KEY=sk-...                   # still needed if Claude passthrough is configured
 ```
 
 Switch model in `vps-compose.yml` ralph service:
