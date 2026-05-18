@@ -11,6 +11,9 @@ dist/
 # Ephemeral task focus — written by listener or `ralph.sh task`
 TASK.md
 
+# Host-specific runtime config — managed on VPS, not in repo
+litellm-config.yaml
+
 # Ralph runtime — never commit these
 .agent-claude/
 .agent-ssh/
