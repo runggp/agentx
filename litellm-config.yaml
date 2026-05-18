@@ -4,6 +4,11 @@ model_list:
       model: ollama/qwen3:8b
       api_base: http://localhost:11434
 
+  - model_name: ollama/qwen3:14b
+    litellm_params:
+      model: ollama/qwen3:14b
+      api_base: http://localhost:11434
+
   - model_name: claude-sonnet-4-6
     litellm_params:
       model: anthropic/claude-sonnet-4-6

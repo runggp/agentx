@@ -1,0 +1,11 @@
+{
+  "session_id": "20260518-164838",
+  "branch": "ralph/workspace-20260518-164838",
+  "original_branch": "main",
+  "mode": "build",
+  "model": "ollama/qwen3:14",
+  "max_iterations": 1,
+  "started_at": "2026-05-18T16:48:48.792Z",
+  "head_at_start": "dda61a8fd981f8a07bee96235ea9cfcb8a2e69a0",
+  "iterations": []
+}
