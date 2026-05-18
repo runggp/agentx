@@ -310,6 +310,9 @@ async def process_message(cfg: Config, raw: bytes) -> None:
 
 async def poll_once(cfg: Config, imap: aioimaplib.IMAP4_SSL) -> None:
     """Search for UNSEEN messages and process each one."""
+    # NOOP flushes pending untagged server responses (e.g. EXISTS updates from
+    # newly arrived messages) so FETCH sequence numbers are always valid.
+    await imap.noop()
     # SEARCH without CHARSET for broadest server compatibility.
     # UID SEARCH is not supported by all servers (e.g. Hostinger rejects it).
     status, data = await imap.search("UNSEEN", charset=None)
