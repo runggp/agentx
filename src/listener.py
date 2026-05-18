@@ -310,8 +310,9 @@ async def process_message(cfg: Config, raw: bytes) -> None:
 
 async def poll_once(cfg: Config, imap: aioimaplib.IMAP4_SSL) -> None:
     """Search for UNSEEN messages and process each one."""
-    # Use regular SEARCH (not UID SEARCH) for broader server compatibility.
-    status, data = await imap.search("UNSEEN")
+    # SEARCH without CHARSET for broadest server compatibility.
+    # UID SEARCH is not supported by all servers (e.g. Hostinger rejects it).
+    status, data = await imap.search("UNSEEN", charset=None)
     if status != "OK":
         log.warning("IMAP SEARCH failed: %s %s", status, data)
         return
@@ -325,13 +326,14 @@ async def poll_once(cfg: Config, imap: aioimaplib.IMAP4_SSL) -> None:
 
     for seq in seqs:
         try:
-            fetch_status, fetch_data = await imap.fetch(seq, "(RFC822)")
+            # BODY.PEEK[] is RFC 3501 and widely supported; RFC822 is legacy.
+            fetch_status, fetch_data = await imap.fetch(seq, "(BODY.PEEK[])")
             if fetch_status != "OK":
                 log.warning("FETCH failed for seq %s: %s", seq, fetch_status)
                 continue
 
             # aioimaplib returns [metadata_line, message_bytes, b')']
-            # The actual RFC822 body is the largest bytes item in the response.
+            # The actual message body is the largest bytes item in the response.
             raw: bytes | None = None
             candidates = [item for item in fetch_data if isinstance(item, bytes) and item != b")"]
             if candidates:
