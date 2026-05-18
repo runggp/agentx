@@ -1,0 +1,52 @@
+{
+  "cli_version": "0.6.1",
+  "checkpoint_id": "7b89230fa3a6",
+  "session_id": "65307a21-1132-48d8-aa76-1f44ec1f0ab4",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-18T15:17:44.370777487Z",
+  "branch": "ralph/workspace-20260518-151238",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "IMPLEMENTATION_PLAN.md"
+  ],
+  "agent": "Claude Code",
+  "model": "",
+  "turn_id": "46abe534d15b",
+  "token_usage": {
+    "input_tokens": 405,
+    "cache_creation_tokens": 83543,
+    "cache_read_tokens": 682938,
+    "output_tokens": 10815,
+    "api_call_count": 26
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-18T15:17:44.352682967Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 2,
+    "human_modified": 14,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 16,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 934,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        "IMPLEMENTATION_PLAN.md": 12,
+        "TASK.md": 1,
+        "lib/output-formatter.js": 258,
+        "lib/session-logger.js": 348,
+        "logs/sessions/20260518-031347.json": 11,
+        "logs/sessions/20260518-151238.json": 11,
+        "uv.lock": 293
+      }
+    }
+  ]
+}
