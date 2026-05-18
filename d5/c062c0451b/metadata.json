@@ -5,7 +5,14 @@
   "branch": "ralph/workspace-20260518-024301",
   "checkpoints_count": 1,
   "files_touched": [
-    "IMPLEMENTATION_PLAN.md"
+    "IMPLEMENTATION_PLAN.md",
+    "lib/output-formatter.js",
+    "lib/session-logger.js",
+    "logs/sessions/20260518-002456.json",
+    "logs/sessions/20260518-004418.json",
+    "logs/sessions/20260518-005610.json",
+    "specs/local-models-task.md",
+    "uv.lock"
   ],
   "sessions": [
     {
@@ -13,13 +20,19 @@
       "transcript": "/d5/c062c0451b/0/full.jsonl",
       "content_hash": "/d5/c062c0451b/0/content_hash.txt",
       "prompt": "/d5/c062c0451b/0/prompt.txt"
+    },
+    {
+      "metadata": "/d5/c062c0451b/1/metadata.json",
+      "transcript": "/d5/c062c0451b/1/full.jsonl",
+      "content_hash": "/d5/c062c0451b/1/content_hash.txt",
+      "prompt": "/d5/c062c0451b/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 2,
-    "cache_creation_tokens": 0,
-    "cache_read_tokens": 15662,
-    "output_tokens": 2,
-    "api_call_count": 1
+    "input_tokens": 524,
+    "cache_creation_tokens": 114053,
+    "cache_read_tokens": 2434004,
+    "output_tokens": 3392,
+    "api_call_count": 69
   }
 }
