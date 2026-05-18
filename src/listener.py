@@ -63,6 +63,7 @@ class Config:
         workspace = Path(os.environ.get("WORKSPACE_PATH", "/opt/agentx"))
         ralph_sh = Path(os.environ.get("RALPH_SH", str(workspace / "ralph.sh")))
 
+        imap_user = require("IMAP_USER")
         smtp_user = require("SMTP_USER")
         raw_senders = os.environ.get("AGENTX_ALLOWED_SENDERS", "")
         allowed_senders: frozenset[str] = frozenset(
@@ -72,7 +73,7 @@ class Config:
         return cls(
             imap_host=os.environ.get("IMAP_HOST", "imap.hostinger.com"),
             imap_port=int(os.environ.get("IMAP_PORT", "993")),
-            imap_user=require("IMAP_USER"),
+            imap_user=imap_user,
             imap_pass=require("IMAP_PASS"),
             smtp_host=os.environ.get("SMTP_HOST", "smtp.hostinger.com"),
             smtp_port=int(os.environ.get("SMTP_PORT", "465")),
@@ -158,6 +159,10 @@ async def dispatch_task(cfg: Config, spec: str, description: str) -> str:
 
     Returns a human-readable work summary string.
     """
+    task_file = cfg.workspace / "TASK.md"
+    task_file.write_text(spec, encoding="utf-8")
+    log.info("Wrote task to %s", task_file)
+
     plan_file = cfg.workspace / "IMPLEMENTATION_PLAN.md"
     task_block = f"- [ ] **Email task:** {description}\n\n{spec}\n\n"
     if plan_file.exists():
