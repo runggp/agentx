@@ -336,7 +336,9 @@ async def poll_once(cfg: Config, imap: aioimaplib.IMAP4_SSL) -> None:
             # aioimaplib returns [metadata_line, message_bytes, b')']
             # The actual message body is the largest bytes item in the response.
             raw: bytes | None = None
-            candidates = [item for item in fetch_data if isinstance(item, bytes) and item != b")"]
+            # aioimaplib returns the message literal as bytearray, not bytes.
+            candidates = [bytes(item) for item in fetch_data
+                          if isinstance(item, (bytes, bytearray)) and bytes(item) != b")"]
             log.debug("FETCH candidates lengths: %s", [len(c) for c in candidates])
             if candidates:
                 raw = max(candidates, key=len)
