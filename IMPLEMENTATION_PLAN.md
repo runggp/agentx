@@ -7,10 +7,9 @@
 
 ## Current Focus
 
-- [~] **Phase 0f: First self-task** — `src/send_task.py` implemented and unit-tested (mocked SMTP). Pending: run `uv run --env-file /opt/agentx/secrets.env src/send_task.py "research local models" specs/local-models-task.md` from inside the container, confirm the email arrives at agentx@runggp.com, the listener (running on VPS host) dispatches a new ralph loop, and a reply is received. uv is now available in the container.
+- [~] **Phase 0f: First self-task** — `src/send_task.py` runs on VPS host and sends email successfully (confirmed). Pending: listener picks up incoming `[task]` email, dispatches a ralph loop, and sends a reply. Note: send_task.py must run on the VPS host — email credentials are not available inside the Docker container.
 - [ ] **Phase 2: Local models** — Install Ollama on VPS host, pull a model (see `specs/local-models.md` once written), wire LiteLLM proxy, benchmark vs Claude API. Requires manual Ollama install before ralph can proceed.
 - [ ] **Phase 2.1: Model router** — Route tasks to models based on type; local for cost, API for quality
-- [~] **Phase 3: Self-monitoring** — `scaffold/lib/session-logger.js` gains a `report` command that reads all `logs/sessions/*.json` and outputs a markdown audit trail (session count, total spend, top tools, per-session breakdown). `scaffold/scripts/loop.sh` prepends this report to the prompt before each loop so Ralph sees its own history. 24 tests pass (6 new). Pending: observation that the report actually appears in a live loop run.
 
 ## Completed
 
@@ -20,6 +19,7 @@
 - [x] **Phase 0d: Structured logging** — `scaffold/lib/session-logger.js` parses Claude stream-json after each iteration, writes `logs/sessions/<session-id>.json` with timestamp, model, cost, tokens, tools_called, files_changed, commit_hash. Called from `scaffold/scripts/loop.sh` — non-blocking, degrades gracefully. Tests in `scaffold/tests/test_session_logger.js`.
 - [x] **Phase 0e: Email listener** — `src/listener.py` implements async IMAP polling (aioimaplib), spec extraction from body/.md attachment, Ralph dispatch via subprocess, SMTP reply (aiosmtplib), and `[stop]`/`[status]` control commands. Tests in `src/tests/test_listener.py`. Run on VPS host: `uv run --env-file /opt/agentx/secrets.env src/listener.py`
 - [x] **Phase 1: Spend tracking** — `check-spend` command in `scaffold/lib/session-logger.js` reads session JSON, sums iteration costs, exits 2 if `RALPH_SPEND_CEILING_USD` exceeded. `loop.sh` checks spend after every iteration and stops with a notification email. Ceiling defaults to 0 (disabled). 18 tests pass. `secrets.env.example` documents the new var.
+- [x] **Phase 3: Self-monitoring** — `scaffold/lib/session-logger.js` `report` command reads all `logs/sessions/*.json` and outputs a markdown audit trail. `scaffold/scripts/loop.sh` prepends this report to the prompt before each loop. Verified: the "## Prior Session Audit Trail" section appeared in an actual loop run prompt.
 
 ## Notes
 

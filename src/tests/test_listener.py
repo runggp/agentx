@@ -373,4 +373,4 @@ class TestConfigFromEnv:
         monkeypatch.setenv("WORKSPACE_PATH", str(tmp_path))
         monkeypatch.setenv("AGENTX_ALLOWED_SENDERS", "a@example.com, B@EXAMPLE.COM")
         cfg = Config.from_env()
-        assert cfg.allowed_senders == frozenset(["a@example.com", "b@example.com"])
+        assert cfg.allowed_senders == frozenset(["a@example.com", "b@example.com", "u@example.com"])

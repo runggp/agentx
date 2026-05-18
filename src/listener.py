@@ -108,17 +108,17 @@ def extract_spec(msg: email.message.Message) -> str:
 
         if "attachment" in disposition and filename.endswith(".md"):
             payload = part.get_payload(decode=True)
-            if payload:
+            if isinstance(payload, bytes):
                 return payload.decode("utf-8", errors="replace").strip()
 
         if content_type == "text/plain" and "attachment" not in disposition:
             payload = part.get_payload(decode=True)
-            if payload:
+            if isinstance(payload, bytes):
                 plain_body = payload.decode("utf-8", errors="replace").strip()
 
         elif content_type == "text/html" and "attachment" not in disposition:
             payload = part.get_payload(decode=True)
-            if payload:
+            if isinstance(payload, bytes):
                 html_body = payload.decode("utf-8", errors="replace").strip()
 
     if plain_body:
@@ -310,23 +310,24 @@ async def process_message(cfg: Config, raw: bytes) -> None:
 
 async def poll_once(cfg: Config, imap: aioimaplib.IMAP4_SSL) -> None:
     """Search for UNSEEN messages and process each one."""
-    status, data = await imap.uid("search", "UNSEEN")
+    # Use regular SEARCH (not UID SEARCH) for broader server compatibility.
+    status, data = await imap.search("UNSEEN")
     if status != "OK":
         log.warning("IMAP SEARCH failed: %s %s", status, data)
         return
 
-    uid_list_raw = data[0].decode() if isinstance(data[0], bytes) else str(data[0])
-    uids = [u for u in uid_list_raw.split() if u]
-    if not uids:
+    seq_list_raw = data[0].decode() if isinstance(data[0], bytes) else str(data[0])
+    seqs = [s for s in seq_list_raw.split() if s]
+    if not seqs:
         return
 
-    log.info("Found %d unseen message(s)", len(uids))
+    log.info("Found %d unseen message(s)", len(seqs))
 
-    for uid in uids:
+    for seq in seqs:
         try:
-            fetch_status, fetch_data = await imap.uid("fetch", uid, "(RFC822)")
+            fetch_status, fetch_data = await imap.fetch(seq, "(RFC822)")
             if fetch_status != "OK":
-                log.warning("FETCH failed for uid %s: %s", uid, fetch_status)
+                log.warning("FETCH failed for seq %s: %s", seq, fetch_status)
                 continue
 
             # aioimaplib returns [metadata_line, message_bytes, b')']
@@ -337,15 +338,15 @@ async def poll_once(cfg: Config, imap: aioimaplib.IMAP4_SSL) -> None:
                 raw = max(candidates, key=len)
 
             if not raw:
-                log.warning("No body data for uid %s", uid)
+                log.warning("No body data for seq %s", seq)
                 continue
 
             await process_message(cfg, raw)
 
-            await imap.uid("store", uid, "+FLAGS", r"(\Seen)")
+            await imap.store(seq, "+FLAGS", r"(\Seen)")
 
         except Exception as exc:
-            log.exception("Error processing uid %s: %s", uid, exc)
+            log.exception("Error processing seq %s: %s", seq, exc)
 
 
 async def run_listener(cfg: Config) -> None:

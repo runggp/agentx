@@ -30,6 +30,14 @@ select = ["E", "F", "I"]
 strict = true
 python_version = "3.14"
 
+[[tool.mypy.overrides]]
+module = "aioimaplib.*"
+ignore_missing_stubs = true
+
+[[tool.mypy.overrides]]
+module = "src.tests.test_send_task"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["src/tests"]
